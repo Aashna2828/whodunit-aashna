@@ -3,7 +3,8 @@ import type { ActionHandler, ActionTools } from 'deepspace/worker'
 import type { Env } from '../../worker'
 import { dealClues } from '../mystery/deal'
 import type { ClueKind, Suspect } from '../mystery/types'
-import { getMystery } from './mystery-source'
+import { claudeGenerator, getMystery } from './mystery-source'
+import { isTestAccountCaller } from './test-account'
 
 // The record shapes these actions read (the `data` part of each record).
 type Phase = 'lobby' | 'investigating' | 'voting' | 'revealed' | 'cancelled'
@@ -73,7 +74,7 @@ const createGame: ActionHandler<Env> = async ({ userId, params, tools }) => {
   return ok({ gameId })
 }
 
-const startGame: ActionHandler<Env> = async ({ userId, params, tools }) => {
+const startGame: ActionHandler<Env> = async ({ userId, params, tools, callerJwt }) => {
   if (!signedIn(userId)) return fail('Sign in first')
   const gameId = String(params.gameId ?? '')
   const problem = await checkHost(tools, userId, gameId, 'lobby')
@@ -82,9 +83,11 @@ const startGame: ActionHandler<Env> = async ({ userId, params, tools }) => {
   const players = await loadPlayers(tools, gameId)
   if (players.length < 2 || players.length > 4) return fail('A game needs 2 to 4 players')
 
-  const result = await getMystery(players.length)
-  if (!result.ok) return fail(`Could not build a mystery: ${result.errors.join('; ')}`)
-  const mystery = result.mystery
+  // The only AI call in the app. Test accounts (browser tests) get the
+  // hand-written fallback, so tests never spend credits or wait on the AI.
+  const testAccount = isTestAccountCaller(callerJwt)
+  if (testAccount) console.info('[mystery] test account: skipping the AI')
+  const { mystery } = await getMystery(players.length, { generate: testAccount ? undefined : claudeGenerator(tools) })
 
   // hands[i] belongs to players[i]. The full file (with each clue's kind and
   // holder) is kept in the unreadable solutions row until the reveal.

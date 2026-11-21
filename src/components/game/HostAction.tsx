@@ -11,10 +11,12 @@ type Props = {
   note?: string // shown above the button
   confirm?: string // set = ask this question before running
   confirmDetail?: string // extra line in that question
+  loadingLabel?: string // button text while the action runs
 }
 
 // A host-only button that runs one server action.
-export function HostAction({ action, gameId, label, disabledHint, note, confirm, confirmDetail }: Props) {
+export function HostAction(props: Props) {
+  const { action, gameId, label, disabledHint, note, confirm, confirmDetail, loadingLabel } = props
   const { run, loading, error } = useAction(action)
   const [asking, setAsking] = useState(false)
 
@@ -28,7 +30,7 @@ export function HostAction({ action, gameId, label, disabledHint, note, confirm,
       <p className="font-typewriter text-xs uppercase tracking-[0.2em] text-primary">Host</p>
       {note && <p className="text-sm">{note}</p>}
       <Button onClick={() => (confirm ? setAsking(true) : go())} loading={loading} disabled={Boolean(disabledHint)}>
-        {label}
+        {loading && loadingLabel ? loadingLabel : label}
       </Button>
       {disabledHint && <p className="text-sm text-muted-foreground">{disabledHint}</p>}
       <ActionError message={error} />

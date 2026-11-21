@@ -1,0 +1,91 @@
+import { expect, test, vi } from 'vitest'
+import { FALLBACK_MYSTERY } from '../mystery/fallback'
+import { getMystery, type GenerateText, type Prompt } from './mystery-source'
+import { isTestAccountCaller } from './test-account'
+
+// A valid mystery that is clearly not the fallback.
+const AI_MYSTERY = { ...FALLBACK_MYSTERY, title: 'The Case of the Fake AI' }
+const VALID = JSON.stringify(AI_MYSTERY)
+const INVALID = JSON.stringify({ ...FALLBACK_MYSTERY, culprit: 'Nobody' })
+
+// A fake AI that returns the given replies in order and records each prompt.
+function fakeAI(...replies: string[]) {
+  const prompts: Prompt[] = []
+  const generate: GenerateText = async (prompt) => {
+    prompts.push(prompt)
+    return replies[prompts.length - 1] ?? INVALID
+  }
+  return { generate, prompts }
+}
+
+test('a valid reply is used on the first attempt', async () => {
+  const ai = fakeAI(VALID)
+  const result = await getMystery(3, { generate: ai.generate })
+  expect(result).toMatchObject({ source: 'ai', attempts: 1 })
+  expect(result.mystery.title).toBe('The Case of the Fake AI')
+})
+
+test('an invalid reply is retried, and the retry prompt lists what was wrong', async () => {
+  const ai = fakeAI(INVALID, VALID)
+  const result = await getMystery(3, { generate: ai.generate })
+  expect(result).toMatchObject({ source: 'ai', attempts: 2 })
+  expect(ai.prompts[0].user).not.toContain('previous reply was rejected')
+  expect(ai.prompts[1].user).toContain('Culprit "Nobody" is not one of the suspects')
+})
+
+test('three invalid replies fall back to the hand-written mystery', async () => {
+  const ai = fakeAI(INVALID, 'not json at all', INVALID)
+  const result = await getMystery(3, { generate: ai.generate })
+  expect(result).toMatchObject({ source: 'fallback', attempts: 3, reason: 'invalid' })
+  expect(result.mystery).toBe(FALLBACK_MYSTERY)
+  expect(ai.prompts).toHaveLength(3)
+})
+
+test('a failed AI call counts as an attempt and is retried', async () => {
+  let calls = 0
+  const generate: GenerateText = async () => {
+    calls += 1
+    if (calls === 1) throw new Error('upstream 503')
+    return VALID
+  }
+  expect(await getMystery(3, { generate })).toMatchObject({ source: 'ai', attempts: 2 })
+})
+
+test('a slow AI falls back at the timeout instead of hanging', async () => {
+  const never: GenerateText = () => new Promise(() => {})
+  const started = Date.now()
+  const result = await getMystery(3, { generate: never, timeoutMs: 50 })
+  expect(result).toMatchObject({ source: 'fallback', reason: 'timeout', attempts: 1 })
+  expect(Date.now() - started).toBeLessThan(1000)
+})
+
+test('with no AI available, the fallback is used without any attempt', async () => {
+  expect(await getMystery(3)).toMatchObject({ source: 'fallback', attempts: 0, reason: 'no-ai' })
+})
+
+test('the prompt carries the content rules', async () => {
+  const ai = fakeAI(VALID)
+  await getMystery(4, { generate: ai.generate, random: () => 0 })
+  const { system, user } = ai.prompts[0]
+  expect(system).toMatch(/no gore/i)
+  expect(system).toMatch(/never real people/i)
+  expect(user).toContain('must plainly give that\n  suspect an alibi')
+  expect(user).toContain('a 1920s ocean liner') // random() = 0 picks the first idea
+})
+
+test('the outcome is logged with the attempt count', async () => {
+  const log = vi.spyOn(console, 'info').mockImplementation(() => {})
+  await getMystery(3, { generate: fakeAI(INVALID, VALID).generate })
+  expect(log).toHaveBeenCalledWith('[mystery] source=ai attempts=2')
+  log.mockRestore()
+})
+
+// Builds an unsigned token with the given claims (the route verifies real ones).
+const tokenWith = (claims: object) => `x.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.sig`
+
+test('test accounts are recognized from the token claim', () => {
+  expect(isTestAccountCaller(tokenWith({ sub: 'u1', isTestAccount: true }))).toBe(true)
+  expect(isTestAccountCaller(tokenWith({ sub: 'u2' }))).toBe(false)
+  expect(isTestAccountCaller(tokenWith({ sub: 'u3', isTestAccount: 'true' }))).toBe(false)
+  expect(isTestAccountCaller('garbage')).toBe(false)
+})

@@ -8,6 +8,7 @@
  */
 import { test, expect, loadAllTestAccounts } from 'deepspace/testing'
 import type { MultiplayerUser } from 'deepspace/testing'
+import { FALLBACK_MYSTERY } from '../src/mystery/fallback'
 
 test.skip(loadAllTestAccounts().length < 3, 'Needs 3 test accounts: npx deepspace test accounts create ...')
 
@@ -60,8 +61,23 @@ async function openApp(...people: MultiplayerUser[]) {
   }
 }
 
+// A crashed earlier run can leave a host with an unfinished game, which makes
+// createGame refuse. Close any such game first: cancel it in the lobby, or
+// push it through to the reveal.
+async function closeUnfinishedGames(host: MultiplayerUser) {
+  for (const phase of ['lobby', 'investigating', 'voting']) {
+    for (const game of await queryAs(host, 'games', { hostId: host.userId, phase })) {
+      const gameId = game.recordId
+      if (phase === 'lobby') await callAction(host, 'cancelGame', { gameId })
+      if (phase === 'investigating') await callAction(host, 'startVoting', { gameId })
+      if (phase !== 'lobby') await callAction(host, 'revealGame', { gameId })
+    }
+  }
+}
+
 // Alice creates a game (returns its id).
 async function createGame(alice: MultiplayerUser): Promise<string> {
+  await closeUnfinishedGames(alice)
   const created = await callAction(alice, 'createGame', { displayName: alice.name })
   expect(created, JSON.stringify(created)).toMatchObject({ success: true })
   return created.data.gameId
@@ -71,6 +87,14 @@ async function createGame(alice: MultiplayerUser): Promise<string> {
 async function joinAndStart(alice: MultiplayerUser, bob: MultiplayerUser, gameId: string) {
   await join(bob, gameId)
   expect(await callAction(alice, 'startGame', { gameId })).toMatchObject({ success: true })
+  await expectFallbackMystery(alice, gameId)
+}
+
+// Test accounts must never reach the paid AI: every game they start uses the
+// hand-written fallback. If this fails, a test is spending real credits.
+async function expectFallbackMystery(user: MultiplayerUser, gameId: string) {
+  const game = (await queryAs(user, 'games', { recordId: gameId }))[0].data
+  expect(game.title, 'a test game used the AI instead of the fallback').toBe(FALLBACK_MYSTERY.title)
 }
 
 // Pushes a game through to "revealed" (errors ignored) so Alice can host again next run.
@@ -275,6 +299,8 @@ test('a host can cancel a lobby game and then host a new one', async ({ users })
 test('UI: invite, join, start, private clues, chat, voting and reveal all update live', async ({ users }) => {
   const [alice, bob] = await users(['Alice', 'Bob'])
   await openApp(alice, bob)
+  await closeUnfinishedGames(alice)
+  await alice.page.reload()
 
   // Alice creates a game from /home and lands on its page.
   await alice.page.getByRole('button', { name: 'Create game' }).first().click()
@@ -291,8 +317,17 @@ test('UI: invite, join, start, private clues, chat, voting and reveal all update
     await bob.page.getByRole('button', { name: 'Join' }).click()
     await expect(alice.page.getByTestId('player-list')).toContainText('Bob')
 
-    // Alice starts; both screens switch to the case file.
+    // Alice starts. The fallback answers fast, so hold her request in the
+    // browser for a moment (it still reaches the real server) to see the
+    // "Writing your case..." label that a slower AI reply would show.
+    await alice.page.route('**/api/actions/startGame', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      await route.continue()
+    })
     await alice.page.getByRole('button', { name: 'Start the investigation' }).click()
+    await expect(alice.page.getByRole('button', { name: 'Writing your case...' })).toBeVisible()
+    await expect(alice.page.getByTestId('case-file')).toBeVisible()
+    await expectFallbackMystery(alice, gameId)
 
     // EVERY dealt player, host included, sees their own clues on screen:
     // at least one, exactly as many as they own, and never the "no clues" notice.

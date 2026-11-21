@@ -34,7 +34,13 @@ export function LobbyView({ view }: { view: GameView }) {
           </p>
         )}
         {view.isHost && (
-          <HostAction action="startGame" gameId={view.gameId} label="Start the investigation" disabledHint={startHint} />
+          <HostAction
+            action="startGame"
+            gameId={view.gameId}
+            label="Start the investigation"
+            loadingLabel="Writing your case..."
+            disabledHint={startHint}
+          />
         )}
       </div>
     </div>
