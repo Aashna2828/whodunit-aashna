@@ -13,11 +13,14 @@ export const gamesSchema: CollectionSchema = {
     {
       name: 'phase',
       storage: 'text',
-      interpretation: { kind: 'select', options: ['lobby', 'investigating', 'voting', 'revealed'] },
+      interpretation: { kind: 'select', options: ['lobby', 'investigating', 'voting', 'revealed', 'cancelled'] },
       default: 'lobby',
     },
     // Empty until the reveal; the real answer lives in `solutions`.
     { name: 'revealedCulprit', storage: 'text', interpretation: 'plain' },
+    { name: 'revealedExplanation', storage: 'text', interpretation: 'plain' },
+    // List of { displayName, suspect }, filled in by revealGame.
+    { name: 'revealedVotes', storage: 'text', interpretation: 'json' },
   ],
   permissions: {
     member: { read: true, create: false, update: false, delete: false },
