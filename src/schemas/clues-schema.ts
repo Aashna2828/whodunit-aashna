@@ -14,7 +14,8 @@ export const cluesSchema: CollectionSchema = {
   ownerField: 'ownerId',
   permissions: {
     member: { read: 'own', create: false, update: false, delete: false },
-    // Locked out too, so the app owner can play without seeing every clue.
-    admin: { read: false, create: false, update: false, delete: false },
+    // Same as members: the app owner is always an admin and often hosts, so
+    // they need their own clues, but never anyone else's.
+    admin: { read: 'own', create: false, update: false, delete: false },
   },
 }

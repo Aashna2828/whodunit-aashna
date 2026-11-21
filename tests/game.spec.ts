@@ -241,9 +241,15 @@ test('UI: invite, join, start, private clues, and chat all update live', async (
 
     // Alice starts; both screens switch to the case file.
     await alice.page.getByRole('button', { name: 'Start the investigation' }).click()
+
+    // EVERY dealt player, host included, sees their own clues on screen:
+    // at least one, exactly as many as they own, and never the "no clues" notice.
     for (const user of [alice, bob]) {
       await expect(user.page.getByTestId('case-file')).toBeVisible()
-      await expect(user.page.getByTestId('my-clue').first()).toBeVisible()
+      const owned = await queryAs(user, 'clues', { gameId })
+      expect(owned.length, `${user.name} owns no clues`).toBeGreaterThan(0)
+      await expect(user.page.getByTestId('my-clue')).toHaveCount(owned.length)
+      await expect(user.page.getByText('No clues for you')).toHaveCount(0)
     }
 
     // None of Bob's clues appear on Alice's screen.
