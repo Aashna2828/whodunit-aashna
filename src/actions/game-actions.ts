@@ -2,7 +2,7 @@ import { isAnonymousUserId } from 'deepspace/worker'
 import type { ActionHandler, ActionTools } from 'deepspace/worker'
 import type { Env } from '../../worker'
 import { dealClues } from '../mystery/deal'
-import type { Suspect } from '../mystery/types'
+import type { ClueKind, Suspect } from '../mystery/types'
 import { getMystery } from './mystery-source'
 
 // The record shapes these actions read (the `data` part of each record).
@@ -10,7 +10,8 @@ type Phase = 'lobby' | 'investigating' | 'voting' | 'revealed' | 'cancelled'
 type Game = { hostId: string; phase: Phase; suspects?: Suspect[] }
 type Player = { gameId: string; userId: string; displayName: string }
 type Vote = { voterId: string; suspect: string }
-type Solution = { culprit: string; explanation: string }
+type ClueFileEntry = { text: string; suspect: string; kind: ClueKind; holderId: string }
+type Solution = { culprit: string; explanation: string; clueFile?: ClueFileEntry[] }
 
 // Every action answers { success: true, data } or { success: false, error }.
 const ok = (data: Record<string, unknown> = {}) => ({ success: true as const, data })
@@ -33,6 +34,12 @@ async function loadPlayers(tools: ActionTools, gameId: string): Promise<Player[]
   return result.data.records
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .map((record) => record.data)
+}
+
+// User ids of the players dealt in at the start: the owners of the game's clues.
+async function dealtPlayerIds(tools: ActionTools, gameId: string): Promise<string[]> {
+  const clues = await tools.query<{ ownerId: string }>('clues', { where: { gameId } })
+  return clues.success ? [...new Set(clues.data.records.map((c) => c.data.ownerId))] : []
 }
 
 // Shared check for host-only actions. Returns an error message, or null if OK.
@@ -79,21 +86,26 @@ const startGame: ActionHandler<Env> = async ({ userId, params, tools }) => {
   if (!result.ok) return fail(`Could not build a mystery: ${result.errors.join('; ')}`)
   const mystery = result.mystery
 
-  // Written first: solutions allows one row per game, so a second Start stops here.
+  // hands[i] belongs to players[i]. The full file (with each clue's kind and
+  // holder) is kept in the unreadable solutions row until the reveal.
+  const hands = dealClues(mystery, players.length)
+  const clueFile: ClueFileEntry[] = hands.flatMap((hand, i) =>
+    hand.map((clue) => ({ ...clue, holderId: players[i].userId })),
+  )
+
+  // Written before any clue: solutions allows one row per game, so a second Start stops here.
   const solution = await tools.create('solutions', {
     gameId,
     culprit: mystery.culprit,
     explanation: mystery.explanation,
+    clueFile,
   })
   if (!solution.success) return fail('This game has already started')
 
-  // hands[i] belongs to players[i]. Only the clue text is stored, never its kind.
-  const hands = dealClues(mystery, players.length)
-  for (const [i, hand] of hands.entries()) {
-    for (const clue of hand) {
-      const created = await tools.create('clues', { gameId, ownerId: players[i].userId, text: clue.text })
-      if (!created.success) return created
-    }
+  // Players' clue rows carry only the text, never the kind.
+  for (const clue of clueFile) {
+    const created = await tools.create('clues', { gameId, ownerId: clue.holderId, text: clue.text })
+    if (!created.success) return created
   }
 
   const updated = await tools.update('games', gameId, {
@@ -101,6 +113,8 @@ const startGame: ActionHandler<Env> = async ({ userId, params, tools }) => {
     setting: mystery.setting,
     victim: mystery.victim,
     suspects: mystery.suspects,
+    dealtCount: players.length,
+    votesCast: 0,
     phase: 'investigating',
   })
   return updated.success ? ok() : updated
@@ -137,6 +151,10 @@ const castVote: ActionHandler<Env> = async ({ userId, params, tools }) => {
   // The votes schema's uniqueOn rule refuses a second vote by the same player.
   const vote = await tools.create('votes', { gameId, voterId: userId, suspect })
   if (!vote.success) return fail(vote.error.startsWith('Duplicate') ? 'You have already voted' : vote.error)
+
+  // Public progress: a recount (not +1), so it stays right even if two votes land at once.
+  const allVotes = await tools.query('votes', { where: { gameId } })
+  if (allVotes.success) await tools.update('games', gameId, { votesCast: allVotes.data.records.length })
   return ok()
 }
 
@@ -153,15 +171,19 @@ const revealGame: ActionHandler<Env> = async ({ userId, params, tools }) => {
   const votes = await tools.query<Vote>('votes', { where: { gameId } })
   if (!votes.success) return votes
   const names = new Map((await loadPlayers(tools, gameId)).map((p) => [p.userId, p.displayName]))
-  const revealedVotes = votes.data.records.map((v) => ({
-    displayName: names.get(v.data.voterId) ?? 'Unknown',
-    suspect: v.data.suspect,
-  }))
+  const nameOf = (id: string) => names.get(id) ?? 'Unknown'
+
+  const revealedVotes = votes.data.records.map((v) => ({ displayName: nameOf(v.data.voterId), suspect: v.data.suspect }))
+  const voterIds = new Set(votes.data.records.map((v) => v.data.voterId))
+  const revealedNonVoters = (await dealtPlayerIds(tools, gameId)).filter((id) => !voterIds.has(id)).map(nameOf)
+  const revealedClues = (solution.clueFile ?? []).map(({ holderId, ...clue }) => ({ ...clue, heldBy: nameOf(holderId) }))
 
   const updated = await tools.update('games', gameId, {
     revealedCulprit: solution.culprit,
     revealedExplanation: solution.explanation,
     revealedVotes,
+    revealedNonVoters,
+    revealedClues,
     phase: 'revealed',
   })
   return updated.success ? ok() : updated
@@ -193,9 +215,7 @@ const sendMessage: ActionHandler<Env> = async ({ userId, params, tools }) => {
   if (!game) return fail('Game not found')
   if (game.phase !== 'investigating' && game.phase !== 'voting') return fail('Chat is open during the investigation and voting')
 
-  const clues = await tools.query<{ ownerId: string }>('clues', { where: { gameId } })
-  if (!clues.success) return clues
-  const participants = [...new Set(clues.data.records.map((c) => c.data.ownerId))]
+  const participants = await dealtPlayerIds(tools, gameId)
   if (!participants.includes(userId)) return fail('Only players in this game can chat')
 
   const author = (await loadPlayers(tools, gameId)).find((p) => p.userId === userId)

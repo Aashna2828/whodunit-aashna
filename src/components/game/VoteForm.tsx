@@ -10,7 +10,9 @@ import type { Vote } from '@/lib/game-types'
 
 // Pick a suspect and accuse. Votes are readable only by their voter, so this
 // query returns my vote (if any) and nobody else's.
-export function VoteForm({ gameId, suspects }: { gameId: string; suspects: Suspect[] }) {
+type Props = { gameId: string; suspects: Suspect[]; isHost: boolean }
+
+export function VoteForm({ gameId, suspects, isHost }: Props) {
   const myVote = useQuery<Vote>('votes', { where: { gameId } })
   const castVote = useAction('castVote')
   const [choice, setChoice] = useState<string | null>(null)
@@ -25,7 +27,9 @@ export function VoteForm({ gameId, suspects }: { gameId: string; suspects: Suspe
         <p>
           You accused <span className="font-typewriter text-primary">{voted}</span>.
         </p>
-        <p className="mt-1 text-sm text-muted-foreground">Waiting for the host to reveal.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {isHost ? "You're the host. Reveal when everyone has voted." : 'Waiting for the host to reveal.'}
+        </p>
       </CaseCard>
     )
   }

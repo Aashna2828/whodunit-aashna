@@ -146,6 +146,10 @@ test('voting rules: phase, players only, late joiners, one vote each', async ({ 
       error: 'Only players dealt in at the start can vote',
     })
 
+    // Vote progress starts at 0 of 2 (Carol, a late joiner, isn't counted).
+    const progress = async () => (await queryAs(carol, 'games', { recordId: gameId }))[0].data
+    expect(await progress()).toMatchObject({ votesCast: 0, dealtCount: 2 })
+
     // Bob's first vote counts; his second is refused.
     expect(await callAction(bob, 'castVote', { gameId, suspect })).toMatchObject({ success: true })
     expect(await callAction(bob, 'castVote', { gameId, suspect })).toMatchObject({
@@ -153,12 +157,60 @@ test('voting rules: phase, players only, late joiners, one vote each', async ({ 
       error: 'You have already voted',
     })
 
-    // After the reveal, voting is closed for everyone.
+    // Everyone sees the count go up, still 1 after the refused second vote,
+    // and the game row never names who voted.
+    expect(await progress()).toMatchObject({ votesCast: 1, dealtCount: 2 })
+    expect(JSON.stringify(await progress())).not.toContain(bob.userId)
+
+    // After the reveal, voting is closed for everyone, and Alice is listed as
+    // not having voted (Carol was never dealt in, so she isn't listed).
     expect(await callAction(alice, 'revealGame', { gameId })).toMatchObject({ success: true })
     expect(await callAction(alice, 'castVote', { gameId, suspect })).toMatchObject({
       success: false,
       error: 'Voting is not open',
     })
+    expect((await progress()).revealedNonVoters).toEqual(['Alice'])
+  } finally {
+    await finishGame(alice, bob, gameId)
+  }
+})
+
+test('the full clue file stays sealed until the reveal, then shows every clue and holder', async ({ users }) => {
+  const [alice, bob] = await users(['Alice', 'Bob'])
+  await openApp(alice, bob)
+  const gameId = await createGame(alice)
+  try {
+    await joinAndStart(alice, bob, gameId)
+    const owned = { Alice: await queryAs(alice, 'clues', { gameId }), Bob: await queryAs(bob, 'clues', { gameId }) }
+
+    // Before the reveal: no clue file on the game, no kind or suspect on any
+    // clue row a player can read, and the solutions row stays unreadable.
+    for (const user of [alice, bob]) {
+      const game = (await queryAs(user, 'games', { recordId: gameId }))[0].data
+      expect(game.revealedClues).toBeUndefined()
+      expect(await queryAs(user, 'solutions', { gameId })).toEqual([])
+    }
+    for (const clue of [...owned.Alice, ...owned.Bob]) {
+      expect(Object.keys(clue.data).sort()).toEqual(['gameId', 'ownerId', 'text'])
+    }
+
+    expect(await callAction(alice, 'startVoting', { gameId })).toMatchObject({ success: true })
+    expect((await queryAs(bob, 'games', { recordId: gameId }))[0].data.revealedClues).toBeUndefined()
+    expect(await callAction(alice, 'revealGame', { gameId })).toMatchObject({ success: true })
+
+    // After the reveal: every clue, each attributed to the player who held it.
+    const file = (await queryAs(bob, 'games', { recordId: gameId }))[0].data.revealedClues as {
+      text: string
+      heldBy: 'Alice' | 'Bob'
+      kind: string
+      suspect: string
+    }[]
+    expect(file.length).toBe(owned.Alice.length + owned.Bob.length)
+    for (const clue of file) {
+      expect(owned[clue.heldBy].map((c) => c.data.text)).toContain(clue.text)
+      expect(['clears', 'incriminates']).toContain(clue.kind)
+      expect(clue.suspect).toBeTruthy()
+    }
   } finally {
     await finishGame(alice, bob, gameId)
   }
@@ -220,7 +272,7 @@ test('a host can cancel a lobby game and then host a new one', async ({ users })
   await callAction(alice, 'cancelGame', { gameId: second }) // clean up
 })
 
-test('UI: invite, join, start, private clues, and chat all update live', async ({ users }) => {
+test('UI: invite, join, start, private clues, chat, voting and reveal all update live', async ({ users }) => {
   const [alice, bob] = await users(['Alice', 'Bob'])
   await openApp(alice, bob)
 
@@ -263,9 +315,39 @@ test('UI: invite, join, start, private clues, and chat all update live', async (
     await bob.page.getByRole('button', { name: 'Send' }).click()
     await expect(alice.page.getByTestId('game-chat')).toContainText('Bob: Check the greenhouse')
 
-    // Alice's home lists the game with its phase.
+    // Voting: both screens show progress; the host who has voted gets the host message.
+    await alice.page.getByRole('button', { name: 'Start voting' }).click()
+    for (const user of [alice, bob]) {
+      await expect(user.page.getByTestId('vote-progress')).toContainText('0 of 2 players have voted')
+    }
+    await alice.page.getByRole('radio').first().click()
+    await alice.page.getByRole('button', { name: /^Accuse / }).click()
+    await expect(alice.page.getByTestId('vote-done')).toContainText("You're the host. Reveal when everyone has voted.")
+    await expect(alice.page.getByText('Waiting for the host to reveal')).toHaveCount(0)
+    for (const user of [alice, bob]) {
+      await expect(user.page.getByTestId('vote-progress')).toContainText('1 of 2 players have voted')
+    }
+
+    // Bob hasn't voted, so revealing asks first.
+    await alice.page.getByRole('button', { name: 'Reveal the culprit' }).click()
+    const confirm = alice.page.getByRole('dialog')
+    await expect(confirm).toContainText("1 player hasn't voted yet. Reveal anyway?")
+    await confirm.getByRole('button', { name: 'Reveal the culprit' }).click()
+
+    // Reveal: the full clue file, who didn't vote, and a New case button, on both screens.
+    const total = (await queryAs(alice, 'clues', { gameId })).length + (await queryAs(bob, 'clues', { gameId })).length
+    for (const user of [alice, bob]) {
+      await expect(user.page.getByTestId('revealed-clue')).toHaveCount(total)
+      await expect(user.page.getByTestId('revealed-clues')).toContainText('Held by Alice')
+      await expect(user.page.getByTestId('revealed-clues')).toContainText('Held by Bob')
+      await expect(user.page.getByTestId('non-voters')).toHaveText("Bob didn't vote")
+      await expect(user.page.getByRole('button', { name: 'New case' })).toBeVisible()
+    }
+
+    // Alice's home lists this game as solved.
     await alice.page.goto('/home')
-    await expect(alice.page.getByTestId('my-games')).toContainText('Investigating')
+    const row = alice.page.getByTestId('game-row').filter({ has: alice.page.locator(`a[href="/game/${gameId}"]`) })
+    await expect(row).toContainText('Solved')
   } finally {
     await finishGame(alice, bob, gameId)
   }

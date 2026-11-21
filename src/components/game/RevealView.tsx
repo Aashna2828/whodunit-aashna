@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import { Vote as VoteIcon } from 'lucide-react'
-import { EmptyState } from '@/components/ui'
+import { Button, EmptyState } from '@/components/ui'
 import { CaseCard } from '@/components/common/CaseCard'
+import { CreateGameModal } from '@/components/home/CreateGameModal'
 import type { Game } from '@/lib/game-types'
+import { RevealedClues } from './RevealedClues'
 
 type Verdict = 'right' | 'wrong' | 'split' | 'none'
 
@@ -27,7 +30,9 @@ const VERDICT_TEXT: Record<Verdict, string> = {
 export function RevealView({ game }: { game: Game }) {
   const culprit = game.revealedCulprit ?? 'Unknown'
   const votes = game.revealedVotes ?? []
+  const nonVoters = game.revealedNonVoters ?? []
   const verdict = groupVerdict(votes, culprit)
+  const [creating, setCreating] = useState(false)
 
   return (
     <div className="max-w-3xl space-y-4">
@@ -56,7 +61,23 @@ export function RevealView({ game }: { game: Game }) {
             ))}
           </ul>
         )}
+        {nonVoters.length > 0 && (
+          <ul className="mt-2 border-t border-border pt-2 text-sm text-muted-foreground" data-testid="non-voters">
+            {nonVoters.map((name, i) => (
+              <li key={i}>{name} didn&apos;t vote</li>
+            ))}
+          </ul>
+        )}
       </CaseCard>
+
+      <RevealedClues clues={game.revealedClues ?? []} />
+
+      <div className="flex justify-center pt-2">
+        <Button size="lg" onClick={() => setCreating(true)}>
+          New case
+        </Button>
+      </div>
+      {creating && <CreateGameModal open onClose={() => setCreating(false)} />}
     </div>
   )
 }

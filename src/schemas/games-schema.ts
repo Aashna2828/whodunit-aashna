@@ -21,6 +21,13 @@ export const gamesSchema: CollectionSchema = {
     { name: 'revealedExplanation', storage: 'text', interpretation: 'plain' },
     // List of { displayName, suspect }, filled in by revealGame.
     { name: 'revealedVotes', storage: 'text', interpretation: 'json' },
+    // Display names of dealt-in players who never voted, filled in by revealGame.
+    { name: 'revealedNonVoters', storage: 'text', interpretation: 'json' },
+    // The full clue file { text, suspect, kind, heldBy }, copied from the solution at the reveal.
+    { name: 'revealedClues', storage: 'text', interpretation: 'json' },
+    // Vote progress: counts only, never names, so votes stay secret.
+    { name: 'dealtCount', storage: 'number', interpretation: 'plain', default: 0 },
+    { name: 'votesCast', storage: 'number', interpretation: 'plain', default: 0 },
   ],
   permissions: {
     member: { read: true, create: false, update: false, delete: false },

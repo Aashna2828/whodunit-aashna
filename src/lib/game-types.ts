@@ -13,7 +13,13 @@ export type Game = {
   revealedCulprit?: string
   revealedExplanation?: string
   revealedVotes?: { displayName: string; suspect: string }[]
+  revealedNonVoters?: string[]
+  revealedClues?: RevealedClue[]
+  dealtCount?: number
+  votesCast?: number
 }
+
+export type RevealedClue = { text: string; suspect: string; kind: 'clears' | 'incriminates'; heldBy: string }
 
 export type Player = { gameId: string; userId: string; displayName: string }
 export type Clue = { gameId: string; ownerId: string; text: string }

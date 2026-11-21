@@ -1,4 +1,4 @@
-/* home pattern: search-first — the detective's case list in one column, "Create game" on top (no search box needed yet) */
+/* home pattern: search-first — the detective's case list in one column, "Create game" above it (no search box needed yet) */
 
 import { useState } from 'react'
 import { AuthOverlay, useAuth } from 'deepspace'
@@ -14,8 +14,8 @@ export default function HomePage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:py-12">
-      <header className="mb-8 flex flex-wrap items-end gap-4">
-        <div className="flex-1">
+      <header className="mb-8">
+        <div>
           <p className="font-typewriter text-xs uppercase tracking-[0.3em] text-muted-foreground">Case files</p>
           <h1 className="font-typewriter text-3xl text-foreground sm:text-4xl">Whodunit</h1>
           <p className="mt-2 max-w-prose text-sm text-muted-foreground">
@@ -23,7 +23,6 @@ export default function HomePage() {
             accuse.
           </p>
         </div>
-        {isSignedIn && <Button onClick={() => setCreating(true)}>Create game</Button>}
       </header>
 
       {!isLoaded ? (

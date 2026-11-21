@@ -7,6 +7,8 @@ export const solutionsSchema: CollectionSchema = {
     { name: 'gameId', storage: 'text', interpretation: 'plain', required: true, immutable: true },
     { name: 'culprit', storage: 'text', interpretation: 'plain', required: true },
     { name: 'explanation', storage: 'text', interpretation: 'plain', required: true },
+    // Every clue with its kind and holder: { text, suspect, kind, holderId }.
+    { name: 'clueFile', storage: 'text', interpretation: 'json' },
   ],
   uniqueOn: ['gameId'],
   permissions: {
