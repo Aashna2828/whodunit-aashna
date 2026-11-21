@@ -72,16 +72,29 @@ function fallback(attempts: number, reason: NonNullable<MysteryResult['reason']>
 // Calls Claude through the platform's integration proxy (no API key here;
 // billed to the app owner's DeepSpace credits).
 export function claudeGenerator(tools: Pick<ActionTools, 'integration'>): GenerateText {
-  return async ({ system, user }) => {
+  return async (prompt) => {
     const result = await tools.integration<{ content?: { type: string; text?: string }[] }>(
       'anthropic/chat-completion',
-      // A full case is roughly 1,000 tokens; the cap stops a runaway reply.
-      { model: MYSTERY_MODEL, max_tokens: 2000, temperature: 1, system, messages: [{ role: 'user', content: user }] },
+      claudeRequest(prompt),
     )
     if (!result.success) throw new Error(result.error)
     const text = (result.data.content ?? []).map((part) => (part.type === 'text' ? (part.text ?? '') : '')).join('')
     if (!text.trim()) throw new Error('The reply was empty')
     return text
+  }
+}
+
+// The exact request body sent to anthropic/chat-completion.
+export function claudeRequest({ system, user }: Prompt) {
+  return {
+    model: MYSTERY_MODEL,
+    // Keep this high. The model reasons before it answers, and those reasoning
+    // tokens count toward max_tokens: at 2000 the whole budget went to
+    // reasoning and no case was written. The case itself is ~1,000 tokens.
+    max_tokens: 8000,
+    temperature: 1,
+    system,
+    messages: [{ role: 'user', content: user }],
   }
 }
 
