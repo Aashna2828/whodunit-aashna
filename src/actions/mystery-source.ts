@@ -6,7 +6,7 @@ import { MIN_CLUES_PER_PLAYER, SUSPECT_COUNT, type Mystery } from '../mystery/ty
 // Change the model here; nothing else needs to change.
 export const MYSTERY_MODEL = 'claude-haiku-5-5'
 // Total time for all attempts. After this the game starts with the fallback.
-export const MYSTERY_TIMEOUT_MS = 30_000
+export const MYSTERY_TIMEOUT_MS = 45_000
 const MAX_ATTEMPTS = 3
 
 // Anything that turns a prompt into reply text. startGame passes a Claude
@@ -35,19 +35,30 @@ export async function getMystery(playerCount: number, options: Options = {}): Pr
   let problems: string[] = []
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const started = Date.now()
+    const logAttempt = (outcome: string) =>
+      console.info(`[mystery] attempt=${attempt} ms=${Date.now() - started} ${outcome}`)
+
     let reply: string
     try {
       reply = await withTimeout(generate(buildPrompt(playerCount, setting, problems)), deadline - Date.now())
     } catch (err) {
-      if (err === TIMED_OUT) return fallback(attempt, 'timeout')
-      problems = [`The request failed: ${err instanceof Error ? err.message : String(err)}`]
+      if (err === TIMED_OUT) {
+        logAttempt('result=timeout')
+        return fallback(attempt, 'timeout')
+      }
+      const message = err instanceof Error ? err.message : String(err)
+      logAttempt(`result=error error=${JSON.stringify(message)}`)
+      problems = [`The request failed: ${message}`]
       continue
     }
     const result = validateMystery(reply, playerCount)
     if (result.ok) {
+      logAttempt('result=valid')
       console.info(`[mystery] source=ai attempts=${attempt}`)
       return { ok: true, mystery: result.mystery, source: 'ai', attempts: attempt }
     }
+    logAttempt(`result=invalid errors=${JSON.stringify(result.errors.join('; '))}`)
     problems = result.errors
   }
   return fallback(MAX_ATTEMPTS, 'invalid')
@@ -64,7 +75,8 @@ export function claudeGenerator(tools: Pick<ActionTools, 'integration'>): Genera
   return async ({ system, user }) => {
     const result = await tools.integration<{ content?: { type: string; text?: string }[] }>(
       'anthropic/chat-completion',
-      { model: MYSTERY_MODEL, max_tokens: 4000, temperature: 1, system, messages: [{ role: 'user', content: user }] },
+      // A full case is roughly 1,000 tokens; the cap stops a runaway reply.
+      { model: MYSTERY_MODEL, max_tokens: 2000, temperature: 1, system, messages: [{ role: 'user', content: user }] },
     )
     if (!result.success) throw new Error(result.error)
     const text = (result.data.content ?? []).map((part) => (part.type === 'text' ? (part.text ?? '') : '')).join('')
@@ -111,7 +123,8 @@ const SETTING_IDEAS = [
 ]
 
 export function buildPrompt(playerCount: number, setting: string, problems: string[]): Prompt {
-  const minClues = Math.max(10, playerCount * MIN_CLUES_PER_PLAYER)
+  // Exactly 10 clues (more only if a large group needs 2 each). Short and fixed keeps the reply fast.
+  const clueCount = Math.max(10, playerCount * MIN_CLUES_PER_PLAYER)
   const system = [
     'You write cozy, fair-play murder mysteries for a party game.',
     'Keep it non-graphic: no gore and no detailed violence. Use only invented people, never real people.',
@@ -120,23 +133,28 @@ export function buildPrompt(playerCount: number, setting: string, problems: stri
 
   const user = `Write a new murder mystery set in or inspired by: ${setting}.
 
-Return JSON with exactly this shape:
+Return JSON with exactly this shape. Keep every field short:
 {
-  "title": string,
-  "setting": string (one or two sentences),
-  "victim": string (name and a short description),
-  "suspects": [{ "name": string, "role": string, "description": string }],
+  "title": string (a few words),
+  "setting": string (1 to 2 sentences),
+  "victim": string (name and who they were, 1 to 2 sentences),
+  "suspects": [{ "name": string, "role": string (a few words), "description": string (1 sentence) }],
   "culprit": string (exactly one suspect's name),
-  "explanation": string (two or three sentences on how and why the culprit did it),
-  "clues": [{ "text": string, "suspect": string (a suspect's name), "kind": "clears" | "incriminates" }]
+  "explanation": string (2 to 3 sentences on how and why the culprit did it),
+  "clues": [{ "text": string (under 30 words), "suspect": string (a suspect's name), "kind": "clears" | "incriminates" }]
 }
 
 Rules, all required:
 - Exactly ${SUSPECT_COUNT} suspects with different names.
-- Between ${minClues} and ${minClues + 2} clues.
-- Every innocent suspect has at least one "clears" clue.
+- Exactly ${clueCount} clues.
+- Every suspect, guilty or innocent, has at least one "incriminates" clue. For each
+  innocent suspect it is a red herring: something that looks suspicious but has an
+  innocent explanation.
+- Every innocent suspect also has at least one "clears" clue.
 - The culprit has no "clears" clue and at least two "incriminates" clues.
-- Add one or two "incriminates" clues about innocent suspects as red herrings.
+- The culprit's incriminating clues must be circumstantial. No single clue may prove
+  guilt on its own or name the culprit as the killer; the answer should only follow
+  from combining clues and ruling the innocents out.
 - Each clue's text must clearly support its tag. A "clears" clue must plainly give that
   suspect an alibi or rule them out. An "incriminates" clue must plainly point at that suspect.
 - The "suspect" field of every clue must exactly match a suspect's name.${

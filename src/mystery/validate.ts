@@ -49,8 +49,13 @@ export function validateMystery(raw: string, playerCount: number): ValidationRes
       if (countClues(mystery.clues, name, 'incriminates') === 0) {
         errors.push('The culprit has no incriminating clue')
       }
-    } else if (clearing === 0) {
-      errors.push(`Innocent suspect "${name}" has no clue clearing them`)
+    } else {
+      if (clearing === 0) errors.push(`Innocent suspect "${name}" has no clue clearing them`)
+      // Fairness: every suspect looks guilty at first, so the culprit isn't
+      // simply "the only one with an incriminating clue".
+      if (countClues(mystery.clues, name, 'incriminates') === 0) {
+        errors.push(`Innocent suspect "${name}" has no incriminating (red herring) clue`)
+      }
     }
   }
 

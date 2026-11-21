@@ -38,7 +38,7 @@ export function LobbyView({ view }: { view: GameView }) {
             action="startGame"
             gameId={view.gameId}
             label="Start the investigation"
-            loadingLabel="Writing your case..."
+            loadingLabel="Writing your case... (about 20 seconds)"
             disabledHint={startHint}
           />
         )}

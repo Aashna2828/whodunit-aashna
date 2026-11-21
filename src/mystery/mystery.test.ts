@@ -53,6 +53,13 @@ test('a culprit with a clearing clue is rejected', () => {
   expect(errors.includes('The culprit has a clue that clears them')).toBeTruthy()
 })
 
+test('an innocent with no incriminating clue is rejected', () => {
+  const errors = errorsOf(
+    variant((m) => { m.clues = m.clues.filter((c) => !(c.suspect === 'Felix Arden' && c.kind === 'incriminates')) }),
+  )
+  expect(errors).toContain('Innocent suspect "Felix Arden" has no incriminating (red herring) clue')
+})
+
 test('too few clues for the number of players is rejected', () => {
   const errors = errorsOf(JSON.stringify(FALLBACK_MYSTERY), 6) // 10 clues < 6 players x 2
   expect(errors.some((e) => e.startsWith('Need at least 12 clues'))).toBeTruthy()

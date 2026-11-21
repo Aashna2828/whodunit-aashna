@@ -71,13 +71,45 @@ test('the prompt carries the content rules', async () => {
   expect(system).toMatch(/never real people/i)
   expect(user).toContain('must plainly give that\n  suspect an alibi')
   expect(user).toContain('a 1920s ocean liner') // random() = 0 picks the first idea
+  // Speed: short fields and a fixed clue count.
+  expect(user).toContain('Exactly 10 clues.')
+  expect(user).toContain('(under 30 words)')
+  expect(user).toContain('"description": string (1 sentence)')
+  // Fairness: circumstantial evidence and a red herring for every innocent.
+  expect(user).toContain('must be circumstantial')
+  expect(user).toContain('No single clue may prove\n  guilt on its own')
+  expect(user).toContain('Every suspect, guilty or innocent, has at least one "incriminates" clue')
 })
 
-test('the outcome is logged with the attempt count', async () => {
+test('each attempt is logged with its duration, and why it failed', async () => {
   const log = vi.spyOn(console, 'info').mockImplementation(() => {})
   await getMystery(3, { generate: fakeAI(INVALID, VALID).generate })
-  expect(log).toHaveBeenCalledWith('[mystery] source=ai attempts=2')
+  const lines = log.mock.calls.map((call) => String(call[0]))
   log.mockRestore()
+
+  expect(lines[0]).toMatch(/^\[mystery\] attempt=1 ms=\d+ result=invalid errors=".*Culprit \\"Nobody\\" is not one of the suspects/)
+  expect(lines[1]).toMatch(/^\[mystery\] attempt=2 ms=\d+ result=valid$/)
+  expect(lines[2]).toBe('[mystery] source=ai attempts=2')
+})
+
+test('a timed-out attempt is logged before falling back', async () => {
+  const log = vi.spyOn(console, 'info').mockImplementation(() => {})
+  await getMystery(3, { generate: () => new Promise(() => {}), timeoutMs: 30 })
+  const lines = log.mock.calls.map((call) => String(call[0]))
+  log.mockRestore()
+
+  expect(lines[0]).toMatch(/^\[mystery\] attempt=1 ms=\d+ result=timeout$/)
+  expect(lines[1]).toBe('[mystery] source=fallback attempts=1 reason=timeout')
+})
+
+test('a fake AI reply with no red herrings is rejected by the validator and retried', async () => {
+  const noRedHerrings = JSON.stringify({
+    ...FALLBACK_MYSTERY,
+    clues: FALLBACK_MYSTERY.clues.filter((c) => c.kind === 'clears' || c.suspect === FALLBACK_MYSTERY.culprit),
+  })
+  const ai = fakeAI(noRedHerrings, VALID)
+  expect(await getMystery(3, { generate: ai.generate })).toMatchObject({ source: 'ai', attempts: 2 })
+  expect(ai.prompts[1].user).toContain('has no incriminating (red herring) clue')
 })
 
 // Builds an unsigned token with the given claims (the route verifies real ones).
