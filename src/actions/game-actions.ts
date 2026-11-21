@@ -178,4 +178,34 @@ const cancelGame: ActionHandler<Env> = async ({ userId, params, tools }) => {
   return updated.success ? ok() : updated
 }
 
-export const gameActions = { createGame, startGame, startVoting, castVote, revealGame, cancelGame }
+const MAX_MESSAGE_LENGTH = 500
+
+// Posts to the game's private chat. Readers are the players dealt in at the
+// start (the owners of the game's clues), so late joiners are left out.
+const sendMessage: ActionHandler<Env> = async ({ userId, params, tools }) => {
+  if (!signedIn(userId)) return fail('Sign in first')
+  const gameId = String(params.gameId ?? '')
+  const text = String(params.text ?? '').trim()
+  if (!text) return fail('Message is empty')
+  if (text.length > MAX_MESSAGE_LENGTH) return fail(`Messages are limited to ${MAX_MESSAGE_LENGTH} characters`)
+
+  const game = await loadGame(tools, gameId)
+  if (!game) return fail('Game not found')
+  if (game.phase !== 'investigating' && game.phase !== 'voting') return fail('Chat is open during the investigation and voting')
+
+  const clues = await tools.query<{ ownerId: string }>('clues', { where: { gameId } })
+  if (!clues.success) return clues
+  const participants = [...new Set(clues.data.records.map((c) => c.data.ownerId))]
+  if (!participants.includes(userId)) return fail('Only players in this game can chat')
+
+  const author = (await loadPlayers(tools, gameId)).find((p) => p.userId === userId)
+  const created = await tools.create('messages', {
+    gameId,
+    authorName: author?.displayName ?? 'Detective',
+    text,
+    participants,
+  })
+  return created.success ? ok() : created
+}
+
+export const gameActions = { createGame, startGame, startVoting, castVote, revealGame, cancelGame, sendMessage }

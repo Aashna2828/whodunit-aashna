@@ -164,6 +164,50 @@ test('voting rules: phase, players only, late joiners, one vote each', async ({ 
   }
 })
 
+test('chat is private to the game, non-empty, and at most 500 characters', async ({ users }) => {
+  const [alice, bob, carol] = await users(['Alice', 'Bob', 'Carol'])
+  await openApp(alice, bob, carol)
+  const game1 = await createGame(alice)
+  const game2 = await createGame(carol)
+  try {
+    await joinAndStart(alice, bob, game1) // game 1: Alice + Bob
+    await joinAndStart(carol, bob, game2) // game 2: Carol + Bob
+
+    expect(await callAction(bob, 'sendMessage', { gameId: game1, text: 'I suspect the gardener' })).toMatchObject({
+      success: true,
+    })
+
+    // Both game-1 players read it.
+    for (const player of [alice, bob]) {
+      const messages = await queryAs(player, 'messages', { gameId: game1 })
+      expect(messages.map((m) => m.data.text)).toEqual(['I suspect the gardener'])
+    }
+
+    // Carol plays in game 2 only: she can neither read nor post in game 1.
+    expect(await queryAs(carol, 'messages', { gameId: game1 })).toEqual([])
+    expect(await callAction(carol, 'sendMessage', { gameId: game1, text: 'hi' })).toMatchObject({
+      success: false,
+      error: 'Only players in this game can chat',
+    })
+
+    // Empty and over-long messages are refused.
+    expect(await callAction(bob, 'sendMessage', { gameId: game1, text: '   ' })).toMatchObject({
+      success: false,
+      error: 'Message is empty',
+    })
+    expect(await callAction(bob, 'sendMessage', { gameId: game1, text: 'x'.repeat(501) })).toMatchObject({
+      success: false,
+      error: 'Messages are limited to 500 characters',
+    })
+    expect(await callAction(bob, 'sendMessage', { gameId: game1, text: 'x'.repeat(500) })).toMatchObject({
+      success: true,
+    })
+  } finally {
+    await finishGame(alice, bob, game1)
+    await finishGame(carol, bob, game2)
+  }
+})
+
 test('a host can cancel a lobby game and then host a new one', async ({ users }) => {
   const [alice] = await users(['Alice'])
   await openApp(alice)
