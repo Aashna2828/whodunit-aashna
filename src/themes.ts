@@ -18,6 +18,11 @@
 
 export const THEMES = [
   {
+    id: 'noir',
+    label: 'Noir',
+    description: 'Whodunit: near-black, case-file cards, brass accent.',
+  },
+  {
     id: 'slate',
     label: 'Slate',
     description: 'Neutral dark placeholder default. Replace with your own theme.',

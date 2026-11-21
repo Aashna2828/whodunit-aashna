@@ -1,28 +1,49 @@
-/**
- * Placeholder home page — replace this with the app's real home.
- *
- * This is intentionally unstyled scaffolding, not a design to build on.
- * Design the app's own look (layout, theme tokens, typography) from your
- * product's point of view instead of extending this page.
- */
+/* home pattern: search-first — the detective's case list in one column, "Create game" on top (no search box needed yet) */
 
-import { useAuthProfileReady } from 'deepspace'
-import { APP_NAME } from '../../constants'
+import { useState } from 'react'
+import { AuthOverlay, useAuth } from 'deepspace'
+import { Button } from '@/components/ui'
+import { Skeleton } from '@/components/common/Feedback'
+import { CreateGameModal } from '@/components/home/CreateGameModal'
+import { MyGamesList } from '@/components/home/MyGamesList'
 
 export default function HomePage() {
-  const { isSignedIn, user } = useAuthProfileReady({ requireUser: true })
+  const { isLoaded, isSignedIn } = useAuth()
+  const [creating, setCreating] = useState(false)
+  const [signingIn, setSigningIn] = useState(false)
 
   return (
-    <div className="flex min-h-full flex-col items-center justify-center gap-3 bg-background px-6 text-center text-foreground">
-      <h1 className="text-2xl font-semibold">{APP_NAME}</h1>
-      <p className="max-w-md text-sm text-muted-foreground">
-        This is a placeholder page. Replace <code>src/pages/(app)/home.tsx</code>{' '}
-        with the app&apos;s real home, and give the app its own theme in{' '}
-        <code>src/themes.css</code>.
-      </p>
-      {isSignedIn && user && (
-        <p className="text-sm text-muted-foreground">Signed in as {user.name ?? user.email}</p>
+    <div className="mx-auto max-w-3xl px-4 py-8 sm:py-12">
+      <header className="mb-8 flex flex-wrap items-end gap-4">
+        <div className="flex-1">
+          <p className="font-typewriter text-xs uppercase tracking-[0.3em] text-muted-foreground">Case files</p>
+          <h1 className="font-typewriter text-3xl text-foreground sm:text-4xl">Whodunit</h1>
+          <p className="mt-2 max-w-prose text-sm text-muted-foreground">
+            One victim, four suspects, and a clue file split between you and your friends. Talk it through, then
+            accuse.
+          </p>
+        </div>
+        {isSignedIn && <Button onClick={() => setCreating(true)}>Create game</Button>}
+      </header>
+
+      {!isLoaded ? (
+        <Skeleton />
+      ) : isSignedIn ? (
+        <MyGamesList onCreate={() => setCreating(true)} />
+      ) : (
+        <div className="rounded-md border border-border bg-card p-6">
+          <p className="font-typewriter text-lg">Sign in to open a case</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Your games and private clues are tied to your account.
+          </p>
+          <Button className="mt-4" onClick={() => setSigningIn(true)}>
+            Sign in
+          </Button>
+        </div>
       )}
+
+      {creating && <CreateGameModal open onClose={() => setCreating(false)} />}
+      {signingIn && <AuthOverlay onClose={() => setSigningIn(false)} />}
     </div>
   )
 }

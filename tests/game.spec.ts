@@ -220,6 +220,51 @@ test('a host can cancel a lobby game and then host a new one', async ({ users })
   await callAction(alice, 'cancelGame', { gameId: second }) // clean up
 })
 
+test('UI: invite, join, start, private clues, and chat all update live', async ({ users }) => {
+  const [alice, bob] = await users(['Alice', 'Bob'])
+  await openApp(alice, bob)
+
+  // Alice creates a game from /home and lands on its page.
+  await alice.page.getByRole('button', { name: 'Create game' }).first().click()
+  const dialog = alice.page.getByRole('dialog')
+  await dialog.getByLabel('Your detective name').fill('Alice')
+  await dialog.getByRole('button', { name: 'Create game' }).click()
+  await alice.page.waitForURL(/\/game\//)
+  const gameId = alice.page.url().split('/game/')[1]
+
+  try {
+    // Bob opens the invite link and joins; Alice's list shows him without a reload.
+    await bob.page.goto(`/game/${gameId}`)
+    await bob.page.getByLabel('Your detective name').fill('Bob')
+    await bob.page.getByRole('button', { name: 'Join' }).click()
+    await expect(alice.page.getByTestId('player-list')).toContainText('Bob')
+
+    // Alice starts; both screens switch to the case file.
+    await alice.page.getByRole('button', { name: 'Start the investigation' }).click()
+    for (const user of [alice, bob]) {
+      await expect(user.page.getByTestId('case-file')).toBeVisible()
+      await expect(user.page.getByTestId('my-clue').first()).toBeVisible()
+    }
+
+    // None of Bob's clues appear on Alice's screen.
+    const aliceScreen = await alice.page.getByTestId('my-clues').innerText()
+    for (const clue of await queryAs(bob, 'clues', { gameId })) {
+      expect(aliceScreen).not.toContain(String(clue.data.text))
+    }
+
+    // Bob posts in chat; Alice sees it live.
+    await bob.page.getByLabel('Message').fill('Check the greenhouse')
+    await bob.page.getByRole('button', { name: 'Send' }).click()
+    await expect(alice.page.getByTestId('game-chat')).toContainText('Bob: Check the greenhouse')
+
+    // Alice's home lists the game with its phase.
+    await alice.page.goto('/home')
+    await expect(alice.page.getByTestId('my-games')).toContainText('Investigating')
+  } finally {
+    await finishGame(alice, bob, gameId)
+  }
+})
+
 test('actions refuse callers who are not signed in', async ({ request }) => {
   const res = await request.post('/api/actions/createGame', { data: { displayName: 'Nobody' } })
   expect(res.status()).toBe(401)

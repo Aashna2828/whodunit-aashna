@@ -38,6 +38,8 @@
   --color-input: rgba(60, 64, 67, 0.6);
   --color-ring: #818cf8;
   --radius: 0.5rem;
+  /* Typewriter face for headings (`font-typewriter`), loaded in index.html. */
+  --font-typewriter: 'Special Elite', 'Courier New', Courier, monospace;
 
   /*
    * Map the rounded-* utilities onto --radius so a theme (or you) can change
