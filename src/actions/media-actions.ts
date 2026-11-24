@@ -57,13 +57,15 @@ async function generateMedia(kind: Kind, { userId, params, tools, env, callerJwt
     const blob = dataUriToBlob(spec.uri(reply.data))
     if (!blob) throw new Error('The reply contained no file')
     const file = await appFiles(env, { scope: 'app', userId }).upload(blob, { key: `${kind}s/${gameId}.${spec.ext}` })
-    await tools.update('media', mediaId, { status: 'ready', path: file.path })
-    console.info(`[media] kind=${kind} ms=${Date.now() - started} result=ready bytes=${blob.size}`)
+    const ms = Date.now() - started
+    await tools.update('media', mediaId, { status: 'ready', path: file.path, ms, bytes: blob.size })
+    console.info(`[media] kind=${kind} ms=${ms} result=ready bytes=${blob.size}`)
     return { success: true as const, data: {} }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    await tools.update('media', mediaId, { status: 'failed' })
-    console.info(`[media] kind=${kind} ms=${Date.now() - started} result=failed error=${JSON.stringify(message)}`)
+    const ms = Date.now() - started
+    await tools.update('media', mediaId, { status: 'failed', ms, error: message.slice(0, 500) })
+    console.warn(`[media] kind=${kind} ms=${ms} result=failed error=${JSON.stringify(message)}`)
     return { success: false as const, error: message }
   }
 }

@@ -36,8 +36,8 @@ DeepSpace credits (a fraction of a cent per case). Test accounts always get the 
 
 ```sh
 npx tsc --noEmit             # typecheck
-npx vitest run               # unit tests only (34)
-npx deepspace test run all   # unit tests, then every Playwright spec (19)
+npx vitest run               # unit tests only (43)
+npx deepspace test run all   # unit tests, then every Playwright spec (20)
 ```
 
 `npx deepspace test run` with no argument runs only the smoke and API specs; use `all` for the game tests.
@@ -109,9 +109,10 @@ dealt into this game, a real suspect name, 1 to 500 characters of chat) before w
 `startGame` writes the solution first (its one-per-game rule also stops a double start), then one `clues` row per
 clue with `ownerId` set to the player it was dealt to. Clue rows hold only the text, never whether the clue clears
 or incriminates. The full clue file (text, suspect, kind, holder) stays in the unreadable `solutions` row until
-`revealGame` copies it onto the game. The dealer reshuffles (up to 50 times) to avoid any single player's hand
-clearing every innocent, so nobody can solve it alone. Players who join after the deal hold no clues, and so can
-watch but not chat or vote.
+`revealGame` copies it onto the game. The dealer reshuffles (up to 200 times) until the deal is fair: no player's
+hand clears every innocent, and the culprit's incriminating clues are spread out (at most one per player when there
+are enough players, otherwise as evenly as possible), so nobody can solve it alone. Players who join after the deal
+hold no clues, and so can watch but not chat or vote.
 
 ### AI generation
 
@@ -119,16 +120,30 @@ watch but not chat or vote.
 
 1. It asks `claude-haiku-5-5` (one constant, `MYSTERY_MODEL`) through DeepSpace's built-in
    `anthropic/chat-completion` integration, for JSON matching `src/mystery/types.ts`. The prompt asks for a random
-   setting, short fields, exactly 10 clues, clue text that plainly supports its tag, circumstantial evidence against
-   the culprit, a red herring for every innocent, and a cozy, non-graphic story with no real people.
-2. `validateMystery` checks every reply: 4 uniquely named suspects, a real culprit, a clearing clue for every innocent
-   and none for the culprit, an incriminating clue for every suspect, and enough clues for the players.
-3. An invalid reply is retried with the validator's errors in the next prompt, up to 3 attempts within a 45-second
-   total budget. After that, or on a timeout, the game starts with the hand-written `FALLBACK_MYSTERY`.
-4. Every attempt is logged with its duration and outcome (`npx deepspace logs --search mystery`).
+   setting, short fields, exactly 10 clues, clue text that plainly supports its tag, suspect names copied exactly
+   (titles included), circumstantial evidence against the culprit, a red herring for every innocent, and a cozy,
+   non-graphic story with no real people.
+2. `validateMystery` checks every reply: 4 uniquely named suspects, a real culprit, every clue naming a real suspect,
+   a clearing clue for every innocent and none for the culprit, an incriminating clue for every suspect, and enough
+   clues for the players. Its errors are specific (for example, which clue names don't match and the exact valid
+   names), because they go straight into the retry prompt.
+3. An invalid reply is retried with those errors in the next prompt, up to 3 attempts within a 60-second total
+   budget. After that, or on a timeout, the game starts with the hand-written `FALLBACK_MYSTERY`.
+4. Every attempt is logged with its duration and outcome, and invalid ones with the validator's errors
+   (`npx deepspace logs --search mystery`).
 
-The model reasons before answering and those tokens count toward `max_tokens`, so it is set to 8000. A real run
-took about 17 seconds and $0.002.
+The model reasons before answering and those tokens count toward `max_tokens`, so it is set to 8000. Real runs
+took about 17 seconds and $0.002 per attempt.
+
+### Cover and briefing
+
+Once a game starts, the host's browser asks for two optional extras without waiting for them: a noir cover
+illustration from the setting (`gemini/generate-image`), shown at the top of the case file, and a narrated briefing
+of the title, setting and victim (`speech/text-to-speech`), behind a "Play case briefing" button. Each is host-only,
+requested once per game (the `media` collection allows one row per game per kind), skipped for test accounts, and
+stored in the app's public file storage. On any failure the extra stays hidden. Each `media` row records its status,
+duration, file size and any error, since the platform's log store does not keep every log line. A real cover cost
+$0.06 (1.6 MB) and a briefing $0.03 (about 400 KB).
 
 ## DeepSpace features used
 
@@ -137,7 +152,8 @@ took about 17 seconds and $0.002.
 | Collections with role-based permissions (`ownerField`, `collaboratorsField`, `userBound`, `uniqueOn`) | Server-enforced privacy for clues, votes, chat and the solution, and one-per-user rules |
 | Live queries (`useQuery`) over the record room's WebSocket | Every screen follows the game as it changes, with no polling |
 | Server actions | Multi-step, privileged game logic that players can't perform directly |
-| Integration proxy (`anthropic/chat-completion`) | AI case writing with no API key in the code, billed to the owner's credits |
+| Integration proxy: `anthropic/chat-completion`, `gemini/generate-image`, `speech/text-to-speech` | AI case writing, cover art and narration with no API keys in the code, billed to the owner's credits |
+| File storage (`appFiles`) | Storing each case's cover image and briefing audio |
 | Auth and protected routes | Sign-in, and invite links that sign visitors in before the game page |
 | Static, prerendered landing page | A fast public front door with no sign-in request or live connection |
 | Test fixture with multiple signed-in users (`deepspace/testing`) | Two- and three-player browser tests |
@@ -148,9 +164,14 @@ stay private to that game's players.
 
 ## Known limitations
 
-- **AI speed.** One attempt takes about 17 seconds, so the 45-second budget fits two. A case that needs a third
-  attempt falls back to the hand-written one. A slow call can't be cancelled; it finishes in the background and is
-  still billed.
+- **AI speed.** Attempts have taken 17 to 35 seconds, so the 60-second budget fits two or three. A case that runs
+  out of time falls back to the hand-written one. A slow call can't be cancelled; it finishes in the background and
+  is still billed.
+- **Cover and briefing** depend on the host's browser asking for them; if the host closes the tab within about 10
+  seconds of starting, they may never be made. Their files are public to anyone with the link (they contain only
+  public case facts), and each game uses about 2 MB of the owner's file storage.
+- **Logs are incomplete.** The platform's log store keeps only some log lines, so `npx deepspace logs` can miss an
+  attempt or media line. Media outcomes are also recorded on their `media` rows.
 - **Fairness is partly unchecked.** The validator counts clues and their tags, but can't tell whether a single clue
   gives the answer away; that relies on the prompt.
 - **One fallback case.** When the AI fails, every such game gets the same mystery.

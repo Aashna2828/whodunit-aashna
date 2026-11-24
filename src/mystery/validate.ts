@@ -37,9 +37,13 @@ export function validateMystery(raw: string, playerCount: number): ValidationRes
     errors.push(`Culprit "${mystery.culprit}" is not one of the suspects`)
   }
 
-  const unknown = mystery.clues.filter((c) => !names.includes(c.suspect))
+  // Name the wrong names and the right ones, so a retry knows exactly what to fix.
+  const unknown = [...new Set(mystery.clues.map((c) => c.suspect).filter((s) => !names.includes(s)))]
   if (unknown.length > 0) {
-    errors.push(`${unknown.length} clue(s) mention a suspect who does not exist`)
+    errors.push(
+      `Clues name suspects who are not in the suspect list: ${quoteList(unknown)}. ` +
+        `Each clue's "suspect" must be exactly one of: ${quoteList(names)}`,
+    )
   }
 
   for (const name of names) {
@@ -65,6 +69,11 @@ export function validateMystery(raw: string, playerCount: number): ValidationRes
   }
 
   return errors.length > 0 ? { ok: false, errors } : { ok: true, mystery }
+}
+
+// ['a', 'b'] → '"a", "b"'
+function quoteList(items: string[]): string {
+  return items.map((item) => `"${item}"`).join(', ')
 }
 
 function countClues(clues: Clue[], suspect: string, kind: Clue['kind']): number {

@@ -6,7 +6,7 @@ import { MIN_CLUES_PER_PLAYER, SUSPECT_COUNT, type Mystery } from '../mystery/ty
 // Change the model here; nothing else needs to change.
 export const MYSTERY_MODEL = 'claude-haiku-5-5'
 // Total time for all attempts. After this the game starts with the fallback.
-export const MYSTERY_TIMEOUT_MS = 45_000
+export const MYSTERY_TIMEOUT_MS = 60_000
 const MAX_ATTEMPTS = 3
 
 // Anything that turns a prompt into reply text. startGame passes a Claude
@@ -170,7 +170,9 @@ Rules, all required:
   from combining clues and ruling the innocents out.
 - Each clue's text must clearly support its tag. A "clears" clue must plainly give that
   suspect an alibi or rule them out. An "incriminates" clue must plainly point at that suspect.
-- The "suspect" field of every clue must exactly match a suspect's name.${
+- Copy each clue's "suspect" EXACTLY from the suspects' "name" fields: the full name,
+  including any title, character for character. Never shorten it to a first name,
+  a surname, or a name without its title.${
     problems.length > 0
       ? `\n\nYour previous reply was rejected for these problems. Fix all of them:\n- ${problems.join('\n- ')}`
       : ''

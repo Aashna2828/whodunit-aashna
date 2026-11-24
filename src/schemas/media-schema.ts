@@ -11,6 +11,11 @@ export const mediaSchema: CollectionSchema = {
     { name: 'status', storage: 'text', interpretation: { kind: 'select', options: ['pending', 'ready', 'failed'] }, required: true },
     // Where the app serves the file (public app-scope storage), once ready.
     { name: 'path', storage: 'text', interpretation: 'plain' },
+    // The outcome, kept on the row because the platform's log store doesn't
+    // keep every log line: how long it took, the file size, and why it failed.
+    { name: 'ms', storage: 'number', interpretation: 'plain' },
+    { name: 'bytes', storage: 'number', interpretation: 'plain' },
+    { name: 'error', storage: 'text', interpretation: 'plain' },
   ],
   uniqueOn: ['gameId', 'kind'],
   permissions: {

@@ -325,7 +325,7 @@ test('UI: invite, join, start, private clues, chat, voting and reveal all update
       await route.continue()
     })
     await alice.page.getByRole('button', { name: 'Start the investigation' }).click()
-    await expect(alice.page.getByRole('button', { name: 'Writing your case... (about 20 seconds)' })).toBeVisible()
+    await expect(alice.page.getByRole('button', { name: 'Writing your case... (20-40 seconds)' })).toBeVisible()
     await expect(alice.page.getByTestId('case-file')).toBeVisible()
     await expectFallbackMystery(alice, gameId)
 
