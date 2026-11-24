@@ -12,17 +12,20 @@ type Props = {
   confirm?: string // set = ask this question before running
   confirmDetail?: string // extra line in that question
   loadingLabel?: string // button text while the action runs
+  onSuccess?: () => void // runs after the action succeeds
 }
 
 // A host-only button that runs one server action.
 export function HostAction(props: Props) {
-  const { action, gameId, label, disabledHint, note, confirm, confirmDetail, loadingLabel } = props
+  const { action, gameId, label, disabledHint, note, confirm, confirmDetail, loadingLabel, onSuccess } = props
   const { run, loading, error } = useAction(action)
   const [asking, setAsking] = useState(false)
 
   async function go() {
     const result = await run({ gameId })
-    if (result.success) setAsking(false)
+    if (!result.success) return
+    setAsking(false)
+    onSuccess?.()
   }
 
   return (

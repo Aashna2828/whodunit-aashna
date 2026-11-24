@@ -1,11 +1,14 @@
 import { CaseCard } from '@/components/common/CaseCard'
 import type { Game } from '@/lib/game-types'
+import { CaseExtras } from './CaseExtras'
 
-// The public facts: setting, victim, and the four suspects.
-export function CaseFile({ game }: { game: Game }) {
+// The public facts: setting, victim, and the four suspects, with the optional
+// cover and briefing on top once they're ready.
+export function CaseFile({ game, gameId }: { game: Game; gameId: string }) {
   const suspects = game.suspects ?? []
   return (
     <CaseCard label="Case file" testId="case-file">
+      <CaseExtras gameId={gameId} />
       <dl className="grid gap-3 sm:grid-cols-2">
         <Fact term="Setting" value={game.setting} />
         <Fact term="Victim" value={game.victim} />

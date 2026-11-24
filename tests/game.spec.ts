@@ -329,6 +329,13 @@ test('UI: invite, join, start, private clues, chat, voting and reveal all update
     await expect(alice.page.getByTestId('case-file')).toBeVisible()
     await expectFallbackMystery(alice, gameId)
 
+    // The extras were requested but skipped (test account), so the case file
+    // simply shows none: no cover, no briefing button, and nothing broken.
+    for (const user of [alice, bob]) {
+      await expect(user.page.getByTestId('case-cover')).toHaveCount(0)
+      await expect(user.page.getByTestId('case-briefing')).toHaveCount(0)
+    }
+
     // EVERY dealt player, host included, sees their own clues on screen:
     // at least one, exactly as many as they own, and never the "no clues" notice.
     for (const user of [alice, bob]) {
@@ -383,6 +390,34 @@ test('UI: invite, join, start, private clues, chat, voting and reveal all update
     await alice.page.goto('/home')
     const row = alice.page.getByTestId('game-row').filter({ has: alice.page.locator(`a[href="/game/${gameId}"]`) })
     await expect(row).toContainText('Solved')
+  } finally {
+    await finishGame(alice, bob, gameId)
+  }
+})
+
+test('case extras (cover, briefing) are host-only, after the start, and skipped for test accounts', async ({ users }) => {
+  const [alice, bob] = await users(['Alice', 'Bob'])
+  await openApp(alice, bob)
+  const gameId = await createGame(alice)
+  try {
+    // Not before the game starts.
+    expect(await callAction(alice, 'generateCover', { gameId })).toMatchObject({
+      success: false,
+      error: 'The game has not started',
+    })
+    await joinAndStart(alice, bob, gameId)
+
+    // Only the host can ask.
+    expect(await callAction(bob, 'generateBriefing', { gameId })).toMatchObject({
+      success: false,
+      error: 'Only the host can do that',
+    })
+
+    // Test accounts are skipped before any paid call, and nothing is stored.
+    for (const name of ['generateCover', 'generateBriefing']) {
+      expect(await callAction(alice, name, { gameId })).toMatchObject({ success: true, data: { skipped: 'test-account' } })
+    }
+    expect(await queryAs(alice, 'media', { gameId })).toEqual([])
   } finally {
     await finishGame(alice, bob, gameId)
   }

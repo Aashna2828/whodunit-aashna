@@ -16,6 +16,7 @@ import { cluesSchema } from './schemas/clues-schema'
 import { solutionsSchema } from './schemas/solutions-schema'
 import { votesSchema } from './schemas/votes-schema'
 import { messagesSchema } from './schemas/messages-schema'
+import { mediaSchema } from './schemas/media-schema'
 
 export const schemas: CollectionSchema[] = [
   usersSchema,
@@ -26,4 +27,5 @@ export const schemas: CollectionSchema[] = [
   solutionsSchema,
   votesSchema,
   messagesSchema,
+  mediaSchema,
 ]

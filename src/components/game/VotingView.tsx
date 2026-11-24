@@ -25,7 +25,7 @@ export function VotingView({ view }: { view: GameView }) {
               Voting is open. You joined after the deal, so you are watching this one.
             </p>
           )}
-          <CaseFile game={view.game} />
+          <CaseFile game={view.game} gameId={view.gameId} />
           <MyClues clues={view.myClues} />
         </>
       }

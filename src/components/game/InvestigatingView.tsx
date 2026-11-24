@@ -10,7 +10,7 @@ export function InvestigatingView({ view }: { view: GameView }) {
     <TwoColumns
       main={
         <>
-          <CaseFile game={view.game} />
+          <CaseFile game={view.game} gameId={view.gameId} />
           <MyClues clues={view.myClues} />
         </>
       }

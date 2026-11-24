@@ -1,9 +1,18 @@
 import { MAX_PLAYERS, MIN_PLAYERS } from '@/lib/game-types'
+import { callAction } from '@/lib/use-action'
 import { HostAction } from './HostAction'
 import { InviteLinkButton } from './InviteLinkButton'
 import { JoinForm } from './JoinForm'
 import { PlayerList } from './PlayerList'
 import type { GameView } from './types'
+
+// Once the case exists, ask for its optional cover and narrated briefing.
+// Deliberately not awaited: the game never waits on these, and a failure
+// only means the extra stays hidden.
+function requestCaseExtras(gameId: string) {
+  void callAction('generateCover', { gameId })
+  void callAction('generateBriefing', { gameId })
+}
 
 export function LobbyView({ view }: { view: GameView }) {
   const count = view.players.length
@@ -40,6 +49,7 @@ export function LobbyView({ view }: { view: GameView }) {
             label="Start the investigation"
             loadingLabel="Writing your case... (about 20 seconds)"
             disabledHint={startHint}
+            onSuccess={() => requestCaseExtras(view.gameId)}
           />
         )}
       </div>
