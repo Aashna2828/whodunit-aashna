@@ -47,7 +47,7 @@ export function LobbyView({ view }: { view: GameView }) {
             action="startGame"
             gameId={view.gameId}
             label="Start the investigation"
-            loadingLabel="Writing your case... (20-40 seconds)"
+            loadingLabel="Writing your case..."
             disabledHint={startHint}
             onSuccess={() => requestCaseExtras(view.gameId)}
           />
